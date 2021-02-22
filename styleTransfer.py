@@ -28,16 +28,6 @@ from matplotlib.pyplot import imread
 import sys
 import argparse, time, os
 import imageio
-
-'''
-from google.colab import files
-
-uploaded = files.upload()
-
-for fn in uploaded.keys():
-  print('User uploaded file "{name}" with length {length} bytes'.format(
-      name=fn, length=len(uploaded[fn])))
-'''
 import subprocess
 
 import matplotlib
@@ -226,7 +216,6 @@ def run_st(content_path, style_path, content_weight, content_iterate, use_iterat
         print("long side : ", long_side)
         lr = 2e-3
 
-        #WHY NO HALF HERE??????????????
         content_im = utils_go.to_device(
             Variable(load_path_for_pytorch(content_path, long_side, force_scale=True).unsqueeze(0))).half()
         content_im_mean = utils_go.to_device(
