@@ -70,11 +70,9 @@ class Hook_Get_Content(nn.Module):
 class Nas(torch.nn.Module):
     def __init__(self, requires_grad=False):
         super(Nas, self).__init__()
-        # vgg_pretrained_features = models.vgg16(pretrained=True).features
-        model = NASNetALarge(num_classes=1001)
-        
-        #change directory from which to load the weights of Nasnet large to fit your file system
-        model.load_state_dict(torch.load('nasnet_no_lin.pth'))
+                
+        model_name = 'nasnetalarge' 
+        model = pretrainedmodels.__dict__[model_name](num_classes=1001, pretrained='imagenet')
 
         model.eval()
 
