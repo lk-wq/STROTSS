@@ -185,12 +185,6 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
 
     cnn1 = (Nas())
 
-    # mode = 'content-capture'
-
-    # phi = lambda x, rand: cnn.forward(x,rand)
-
-    # phi = lambda scl, x : cnn.forward(scl,x)
-
     #### Optimize over laplaccian pyramid instead of pixels directly ####
 
     ### Define Optimizer ###
@@ -256,14 +250,6 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
             # START INDEX SELECTION 2
             # channel_list = [96, 168, 336] + [1008] * 6 + [1344] + [2016] * 6 + [2688] + [4032] * 6
 
-            # for __ in z_x_style:
-            #     print("location in z_x", __.get_device())
-
-            # print("time to forward prop in half : " , end-start)
-
-            # for j in z_x_style:
-            #    print("z_x_style type : ", j.type())
-
             torch.cuda.empty_cache()
 
             # END INDEX SELECTION 2
@@ -326,7 +312,6 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
             ell += objective_wrapper.eval(long_side, cut, scl, z_x_style, z_x_style, z_c, z_s_all, gs, 0.,
                                           content_weight=content_weight, moment_weight=1.0) / inner_iter
             torch.cuda.empty_cache()
-            print("ell", ell.item())
 
         with amp.scale_loss(ell, optimizer) as scaled_loss:
             scaled_loss.backward()
@@ -524,12 +509,6 @@ def style_transfer_large(counter, stylized_im, content_im, style_path, output_pa
         optimizer.zero_grad()
         if use_pyr:
             stylized_im = syn_lap_pyr(s_pyr)
-            # print("pre stylized im max min :  " , stylized_im.clone().max() , stylized_im.clone().min())
-
-            # print("stylized_im : " , stylized_im.size())
-            # stylized_im_1 = sig(lin_decor(( stylized_im.clone() ))) - 0.5 #- torch.ones_like(stylized_im.detach().clone())*0.5
-            # print("lin decor max min : " , lin_decor(( stylized_im.clone() )).max(), lin_decor(( stylized_im.clone() )).min())
-            # print("post stylized im max min :  " , stylized_im.clone().max() , stylized_im.clone().min())
         else:
             stylized_im = s_pyr[0]
 
@@ -541,11 +520,6 @@ def style_transfer_large(counter, stylized_im, content_im, style_path, output_pa
         style_index_list = []
 
         z_x_style = phi1(scl, stylized_im, style_index_list, 'stylized')
-
-        # print("time to forward prop in half : " , end-start)
-
-        # for j in z_x_style:
-        #    print("z_x_style type : ", j.type())
 
         torch.cuda.empty_cache()
 
@@ -583,23 +557,6 @@ def style_transfer_large(counter, stylized_im, content_im, style_path, output_pa
         # print("stylized im size : " , stylized_im.size())
 
         ## Compute Objective and take gradient step ##
-        '''
-        for j in z_x_content:
-            print("z_x_content type : ", j.type())
-        for j in z_c:
-            print("z_c type :" ,j.type())
-
-        #move to cpu
-
-        if scl == 1:
-            print("hit scl")
-
-            torch.cuda.empty_cache()
-
-            ell = objective_wrapper.eval(scl,  chan_list , z_x_content_cpu, z_x_style_cpu, z_c_cpu, z_s_all_cpu, gs, 0., content_weight=content_weight,moment_weight=1.0).cpu()
-        else:
-            print("no scl")
-        '''
         torch.cuda.empty_cache()
 
         cut = 1000000
@@ -610,15 +567,8 @@ def style_transfer_large(counter, stylized_im, content_im, style_path, output_pa
         # with amp.scale_loss(ell, optimizer) as scaled_loss:
         #    scaled_loss.backward()
 
-        # print(f"FINAL!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! GPU Memory Used: {get_gpu_memory_map()} MB")
-
-        # start_b = time.time()
         with amp.scale_loss(ell, optimizer) as scaled_loss:
             scaled_loss.backward()
-        # end_b = time.time()
-        # print("b prop time : " , start_b - end_b)
-
-        # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! DONE !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
         optimizer.step()
 
