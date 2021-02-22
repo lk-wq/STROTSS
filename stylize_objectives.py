@@ -136,13 +136,9 @@ class objective_class():
                 gxx, gxy = self.get_feature_inds_g()
                 gx_st, gc_st = self.spatial_feature_extract(z_x_content, z_c, gxx, gxy)
 
-            ## Reshape Features from Style Distribution ##
-            # print("raw z_s : " , len(z_s[ri]) )
-            # print("this is z_s : " , z_s[ri][0].size() )
             d = z_s[ri][0].size(1)
             # print("this is d : " , d)
             z_st = z_s[ri][0].view(1, d, -1, 1)
-            # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! this is z_st : ", z_st.size())
 
             ## Compute Content Loss ##
 
@@ -154,26 +150,12 @@ class objective_class():
 
                 ell_content = utils_go.to_device(content_loss_func(long_side, cut, scl, utils_go.to_device1(x_st[:, :, :, :]), utils_go.to_device1(c_st[:, :, :, :])))
 
-            # print("x_st type : " , x_st.type())
-            # print("c_st type : ", c_st.type())
 
             print("ec", ell_content)
 
-            # print("ell cont : ", ell_content.is_cuda)
 
             ## Compute Style Loss ##
 
-            # print("input to X style_loss_func : " , x_st.size())
-            # print("input to Z style_loss_func : " , z_st.size())
-            # print("this is fm : " , fm)
-
-            # for i in range(0,  len(z_x_style) ):
-            #    print("z x style : " , z_x_style[i].size())
-
-            # x_st_style = self.spatial_feature_extract_single(z_x_style, xx , xy, scl)
-            # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! this is x_st_style : " , x_st_style.size())
-
-            # print("x_st_style : " , x_st_style.is_cuda)
             fm = 2619
 
             # START INDEX SELECTION 2
@@ -189,26 +171,8 @@ class objective_class():
                 channel_list = [3] + [96] + [168] + [336] + [1008] * 2 + [1008] * 3 + [1008] + [1344] + [2016] * 6 + [
                     2688] + [4032] * 3
 
-            # sum_ = 0
-            # index_list = []
-            # for i in channel_list:
-            #    indices = torch.randint(0, i, (i // 4,)) + 3 + 96 + 168 + 336 + sum_
-            #    index_list = index_list + [indices]
-            #    sum_ = sum_ + i
-
-            # pre_ix = torch.cat(index_list, 0)
-
-            # prefix = []
-            # for i in range(0, 3 + 96 + 168 + 336):
-            #    prefix = prefix + [i]
-
-            # prefix_tensor = torch.tensor(prefix)
-
-            # final_ix = torch.cat([prefix_tensor, pre_ix], 0)
-
             # END INDEX SELECTION 2
 
-            # print("z_st : " , z_st.is_cuda)
             if scl == 1:
                 remd_loss = \
                 utils_go.to_device(remd_loss_OT(long_side, cut, scl, utils_go.to_device2(x_st[:, :-2, :, :]), utils_go.to_device2(z_st), utils_go.to_device2(self.z_dist), splits=channel_list)[0] / len(channel_list))
@@ -217,8 +181,6 @@ class objective_class():
                 utils_go.to_device(style_loss_func(long_side, cut, scl, utils_go.to_device1(x_st[:, :-2, :, :]), utils_go.to_device1(z_st), utils_go.to_device1(self.z_dist), splits=channel_list)[0] / len(channel_list))
 
             print("remd_loss", remd_loss)
-            # print("x_st_style type : ", x_st_style.type())
-            # print("z_st type : ", z_st.type())
 
             if gz.sum() > 0.:
                 for j in range(gz.size(2)):
@@ -296,12 +258,6 @@ class objective_class():
             ell_style = utils_go.to_device(remd_loss) + moment_weight * utils_go.to_device(moment_ell)
             print("ell style location ", ell_style.get_device())
             style_weight = 1.0 + moment_weight
-            # print("ell content : " , ell_content)
-            # print("ell style : " , ell_style)
-            # print("ell_content: " , ell_content)
-            # print("ell_style : " , ell_style)
-            # print("content_weight : " , (content_weight*ell_content)/ (content_weight + style_weight) )
-            # print("style_weight : " , (ell_content)/ (content_weight + style_weight) )
 
             final_loss += (content_weight * utils_go.to_device(ell_content) + ell_style) / (content_weight + style_weight)
 
@@ -416,21 +372,7 @@ class objective_class():
             s10 = np.clip(xxm + 1, 0, temp.size(2) - 1) * temp.size(3) + (xym)
             s11 = np.clip(xxm + 1, 0, temp.size(2) - 1) * temp.size(3) + np.clip(xym + 1, 0, temp.size(3) - 1)
 
-            # print("s00 : " , s00.max())
-            # print("s01 : " ,s01.max())
-            # print("s10 : " , s10.max())
-            # print("s11 : " ,s11.max())
-
-            # print("w00 : " , w00.max())
-            # print("w01 : " , w01.max())
-            # print("w10 : " , w10.max())
-            # print("w11 : " , w11.max())
-
             temp = temp.view(1, temp.size(1), temp.size(2) * temp.size(3), 1)
-
-            #print("temp location", temp.get_device() )
-            #print("temp2 location", temp2.get_device() )
-            #print("w00 location", w00.get_device() )
 
             temp = temp[:, :, s00, :].mul_(w00).add_(temp[:, :, s01, :].mul_(w01)).add_(
                 temp[:, :, s10, :].mul_(w10)).add_(temp[:, :, s11, :].mul_(w11))
