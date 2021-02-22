@@ -56,12 +56,6 @@ def pairwise_distances_cos2(x, y):
     y_t = torch.transpose(y, 0, 1)
     y_norm = torch.sqrt((y ** 2).sum(1).view(1, -1))
 
-    # print("x size : ", x.size())
-    # print("y size : ", y.size())
-    # print("x_norm sizE :", x_norm.size())
-    # print("y_norm sizE: ", y_norm.size())
-    # print("y_t size : ", y_t.size())
-
     dist = 1. - torch.mm(x, y_t) / x_norm / y_norm
 
     # print("dist size : ", dist.unsqueeze(0).size())
@@ -76,19 +70,11 @@ def pairwise_distances_cos_and_l2(x, y):
     y_t = torch.transpose(y, 0, 1)
     y_norm = torch.sqrt((y ** 2).sum(1).view(1, -1))
 
-    # print("x size : ", x.size())
-    # print("y size : ", y.size())
-    # print("x_norm sizE :", x_norm.size())
-    # print("y_norm sizE: ", y_norm.size())
-    # print("y_t size : ", y_t.size())
-
     dist = 1. - torch.mm(x, y_t) / x_norm / y_norm
 
     dist_l2_pre = x_norm + y_norm - 2.0 * torch.mm(x, y_t)
 
     dist_l2 = (torch.clamp(dist_l2_pre.float(), 1e-5, 1e5) / x.size(1))
-
-    # print("dist size : ", dist.unsqueeze(0).size())
 
     return (dist + dist_l2).unsqueeze(0)
 
@@ -215,7 +201,6 @@ def viz_d(zx, coords):
 def remd_loss_OT(long_side, cut, scl, X1, Y1, h=None, cos_d=True,
                  splits=[3 + 64 + 64 + 128 + 128 + 256 + 256 + 256 + 512 + 512],
                  return_mat=False):
-    # print("****************************************************************** go")
     d = X1.size(1)
 
     if d == 3:
@@ -234,7 +219,6 @@ def remd_loss_OT(long_side, cut, scl, X1, Y1, h=None, cos_d=True,
 
     split_start = 0
     for i in splits:
-        # print("i : " , i)
         split_end = split_start + i
         Xnew = X1[:, split_start:split_end]
         Ynew = Y1[:, split_start:split_end]
@@ -379,10 +363,6 @@ def remd_loss_g(X, Y, GX, GY, h=1.0, splits=[3 + 64 + 64 + 128 + 128 + 256 + 256
 def moment_loss(scl, X, Y, moments=[1, 2]):
     d = X.size(1)
     ell = 0.
-    # print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
-    # print("X size : " , X.size())
-    # print("Y size : " , Y.size())
-    # print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
 
     Xo = X.transpose(0, 1).contiguous().view(d, -1).transpose(0, 1)
     Yo = Y.transpose(0, 1).contiguous().view(d, -1).transpose(0, 1)
