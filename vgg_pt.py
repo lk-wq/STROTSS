@@ -54,445 +54,17 @@ class Hook_Get_Content(nn.Module):
             self.content_hook = torch.index_select(output[0], 0, self.rand)
 
             self.channels = self.content_hook.size(0)
-            # print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-            # print("size of out original : ", output[0].size())
 
             if len(self.content_hook.size()) < 4:
-                # print("content tripedd?????")
                 self.content_hook = self.content_hook.clone().unsqueeze(0)
-                # print("size of c post: ", self.content_hook.size())
-            # print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
 
             self.go = True
 
         if self.mode == 'stylized-capture':
-            # print("content loss capture")
             self.hook_input = torch.index_select(output[0], 0, self.rand)
-            # print("size of style: " , self.hook_input.size())
 
             if len(self.hook_input.size()) < 4:
                 self.hook_input = self.hook_input.clone().unsqueeze(0)
-
-            # print("input : " , input)
-            # print("self.content_hook : " , self.content_hook)
-            # print("len input : " , len(input))
-
-
-class Sge(torch.nn.Module):
-    def __init__(self, requires_grad=False):
-        super(Sge, self).__init__()
-
-        self.model_module = model_sge.module.cuda()
-        self.content_hook_list = []
-        self.mode = 'none'
-        self.channel_list = []
-
-    def init_hooks(self, mode):
-        self.content_hook_list = []
-        count = 0
-        # new_hook_0 = Hook_Get_Content()
-        # getattr(self.model_module, 'relu').register_forward_hook(new_hook_0.hook)
-        # self.content_hook_list = self.content_hook_list + [ new_hook_0 ]
-
-        for i in [3, 4]:
-            if i == 1:
-                ix = 2
-            if i == 2:
-                ix = 3
-            if i == 3:
-                ix = 5
-            if i == 4:
-                ix = 2
-            for j in range(0, ix + 1):
-                for q in ['relu1', 'relu2', 'relu3']:
-                    # print("rand : ", rand, len(rand))
-                    # print("count : ", count)
-
-                    new_hook = Hook_Get_Content()
-                    self.content_hook_list = self.content_hook_list + [new_hook]
-                    getattr(getattr(self.model_module, 'layer' + str(i))[j], q).register_forward_hook(new_hook.hook)
-                    count += 1
-
-    def forward_base(self, X, mode_cx):
-        if mode_cx == 'content-capture':
-            self.init_hooks(mode_cx)
-
-        for i in self.content_hook_list:
-            i.mode = mode_cx
-        x = X
-        l2 = [X]
-        self.model_module.eval()
-        # print("capturing start ------------------------------------------------------------------------>")
-        self.model_module(x.cuda())
-        # print("capturing end -------------------------------------------------------------------------->")
-
-        if mode_cx == 'content-capture':
-            for j in self.content_hook_list:
-                self.channel_list = self.channel_list + [j.channels]
-
-        for i in self.content_hook_list:
-            if mode_cx == 'content-capture':
-                l2.append(i.content_hook)
-            elif mode_cx == 'stylized-capture':
-                l2.append(i.hook_input)
-
-        return l2
-
-    def forward(self, X, mode):
-
-        x = X
-        l2 = self.forward_base(X, mode)
-        out2 = l2
-
-        return out2
-
-    def forward_cat(self, X, r, inds=[1, 3, 5, 8, 11], rand=True, samps=100, forward_func=None):
-
-        if not forward_func:
-            forward_func = self.forward
-
-        x = X
-        out2 = forward_func(X)
-
-        try:
-            r = r[:, :, 0]
-        except:
-            pass
-
-        if r.max() < 0.1:
-            region_mask = np.greater(r.flatten() + 1., 0.5)
-        else:
-            region_mask = np.greater(r.flatten(), 0.5)
-
-        xx, xy = np.meshgrid(np.array(range(x.size(2))), np.array(range(x.size(3))))
-        xx = np.expand_dims(xx.flatten(), 1)
-        xy = np.expand_dims(xy.flatten(), 1)
-        xc = np.concatenate([xx, xy], 1)
-
-        xc = xc[region_mask, :]
-
-        np.random.shuffle(xc)
-
-        const2 = min(samps, xc.shape[0])
-
-        xx = xc[:const2, 0]
-        yy = xc[:const2, 1]
-
-        temp = X
-        temp_list = [temp[:, :, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
-        temp = torch.cat(temp_list, 2)
-
-        l2 = []
-        for i in range(len(out2)):
-
-            temp = out2[i]
-
-            if i > 0 and out2[i].size(2) < out2[i - 1].size(2):
-                xx = xx / 2.0
-                yy = yy / 2.0
-
-            xx = np.clip(xx, 0, temp.size(2) - 1).astype(np.int32)
-            yy = np.clip(yy, 0, temp.size(3) - 1).astype(np.int32)
-
-            temp_list = [temp[:, :, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
-            temp = torch.cat(temp_list, 2)
-
-            l2.append(temp.clone().detach())
-
-        out2 = [torch.cat([li.contiguous() for li in l2], 1)]
-
-        return out2
-
-    def forward_diff(self, X, inds=[1, 3, 5, 8, 11], rand=True):
-
-        inds = self.inds
-        l2 = self.forward_base(X, inds, rand)
-
-        out2 = [l2[i].contiguous() for i in inds]
-
-        for i in range(len(out2)):
-            temp = out2[i]
-            temp2 = F.pad(temp, (2, 2, 0, 0), value=1.)
-            temp3 = F.pad(temp, (0, 0, 2, 2), value=1.)
-            out2[i] = torch.cat(
-                [temp, temp2[:, :, :, 4:], temp2[:, :, :, :-4], temp3[:, :, 4:, :], temp3[:, :, :-4, :]], 1)
-
-        return out2
-
-
-class Vgg16_pt(torch.nn.Module):
-    def __init__(self, requires_grad=False):
-        super(Vgg16_pt, self).__init__()
-        self.vgg_layers = vgg16(pretrained=False).features
-        tl = torch.load('/content/drive/My Drive/vgg16_no_lin.pth')
-        self.vgg_layers.load_state_dict(tl)
-        '''
-        self.slice1 = torch.nn.Sequential()
-        self.slice2 = torch.nn.Sequential()
-        self.slice3 = torch.nn.Sequential()
-        self.slice4 = torch.nn.Sequential()
-        for x in range(1):
-            self.slice1.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(1, 9):
-            self.slice2.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(9, 16):
-            self.slice3.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(16, 23):
-            self.slice4.add_module(str(x), vgg_pretrained_features[x])
-        '''
-        if not requires_grad:
-            for param in self.parameters():
-                param.requires_grad = False
-
-        self.inds = range(11)
-
-    def forward_base(self, scl, X, rand):
-        inds = self.inds
-
-        x = X.cuda()
-        if scl == 6:
-            l2 = [X.cpu()]
-            self.vgg_layers = self.vgg_layers.cpu()
-        else:
-            l2 = [X]
-        for i in range(30):
-            torch.cuda.empty_cache()
-
-            if scl == 6:
-                print("x input : ", x.size())
-                x = self.vgg_layers[i].forward(x.cpu())  # [:,:,1:-1,1:-1]
-                print("x output : ", x.size())
-            else:
-                x = self.vgg_layers[i].forward(x.cuda())
-
-                # print("this is x : " , x.size(), i)
-
-            if scl == 6:
-                if i in [22, 25, 27, 29]:  # [1, 3, 6, 8, 11, 13, 15, 17, 20, 22, 24, 26, 29, 31, 33, 35]:
-                    print("appended x : ", x.size())
-                    l2.append(x.cpu())
-                else:
-                    l2.append(x)
-            else:
-                if i in [11, 13, 15, 18, 20, 22, 25, 27, 29]:
-                    l2.append(x)
-
-        return l2
-
-    def forward(self, scl, X, inds=[1, 3, 5, 8, 11], rand=True):
-
-        inds = self.inds
-
-        x = X
-        l2 = self.forward_base(scl, X, rand)
-        out2 = l2
-
-        return out2
-
-    def forward_cat(self, X, r, inds=[1, 3, 5, 8, 11], rand=True, samps=100, forward_func=None):
-
-        if not forward_func:
-            forward_func = self.forward
-
-        x = X
-        out2 = forward_func(X, rand)
-
-        try:
-            r = r[:, :, 0]
-        except:
-            pass
-
-        if r.max() < 0.1:
-            region_mask = np.greater(r.flatten() + 1., 0.5)
-        else:
-            region_mask = np.greater(r.flatten(), 0.5)
-
-        xx, xy = np.meshgrid(np.array(range(x.size(2))), np.array(range(x.size(3))))
-        xx = np.expand_dims(xx.flatten(), 1)
-        xy = np.expand_dims(xy.flatten(), 1)
-        xc = np.concatenate([xx, xy], 1)
-
-        xc = xc[region_mask, :]
-
-        np.random.shuffle(xc)
-
-        const2 = min(samps, xc.shape[0])
-
-        xx = xc[:const2, 0]
-        yy = xc[:const2, 1]
-
-        temp = X
-        temp_list = [temp[:, :, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
-        temp = torch.cat(temp_list, 2)
-
-        l2 = []
-        for i in range(len(out2)):
-
-            temp = out2[i]
-
-            if i > 0 and out2[i].size(2) < out2[i - 1].size(2):
-                xx = xx / 2.0
-                yy = yy / 2.0
-
-            xx = np.clip(xx, 0, temp.size(2) - 1).astype(np.int32)
-            yy = np.clip(yy, 0, temp.size(3) - 1).astype(np.int32)
-
-            temp_list = [temp[:, :, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
-            temp = torch.cat(temp_list, 2)
-
-            l2.append(temp.clone().detach())
-
-        out2 = [torch.cat([li.contiguous() for li in l2], 1)]
-
-        return out2
-
-    def forward_diff(self, X, inds=[1, 3, 5, 8, 11], rand=True):
-
-        inds = self.inds
-        l2 = self.forward_base(X, inds, rand)
-
-        out2 = [l2[i].contiguous() for i in inds]
-
-        for i in range(len(out2)):
-            temp = out2[i]
-            temp2 = F.pad(temp, (2, 2, 0, 0), value=1.)
-            temp3 = F.pad(temp, (0, 0, 2, 2), value=1.)
-            out2[i] = torch.cat(
-                [temp, temp2[:, :, :, 4:], temp2[:, :, :, :-4], temp3[:, :, 4:, :], temp3[:, :, :-4, :]], 1)
-
-        return out2
-
-
-'''
-class Vgg16_pt_small(torch.nn.Module):
-    def __init__(self, requires_grad=False):
-        super(Vgg16_pt_small, self).__init__()
-        vgg_pretrained_features = models.vgg19(pretrained=True).features.eval()
-        self.vgg_layers = vgg_pretrained_features
-        self.slice1 = torch.nn.Sequential()
-        self.slice2 = torch.nn.Sequential()
-        self.slice3 = torch.nn.Sequential()
-        self.slice4 = torch.nn.Sequential()
-        for x in range(1):
-            self.slice1.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(1, 9):
-            self.slice2.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(9, 16):
-            self.slice3.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(16, 23):
-            self.slice4.add_module(str(x), vgg_pretrained_features[x])
-        if not requires_grad:
-            for param in self.parameters():
-                param.requires_grad = False
-
-        self.inds = range(11)
-
-    def forward_base(self, scl, X, rand):
-        inds = self.inds
-
-        x = X.cuda()
-        if scl == 6:
-            l2 = [X.cpu()]
-        else:
-            l2 = [X]
-        for i in range(30):
-            try:
-                x = self.vgg_layers[i].forward(x.cuda())  # [:,:,1:-1,1:-1]
-                # print("this is x : " , x.size(), i)
-
-            except:
-                pass
-            if i in [1, 3, 6, 8, 11, 13, 15, 17, 20, 22, 24, 26, 29, 31, 33, 35]:
-                if scl == 6:
-                    l2.append(x.cpu())
-                else:
-                    l2.append(x)
-
-        return l2
-
-    def forward(self, scl, X, inds=[1, 3, 5, 8, 11], rand=True):
-
-        inds = self.inds
-
-        x = X
-        l2 = self.forward_base(scl, X, rand)
-        out2 = l2
-
-        return out2
-
-    def forward_cat(self, X, r, inds=[1, 3, 5, 8, 11], rand=True, samps=100, forward_func=None):
-
-        if not forward_func:
-            forward_func = self.forward
-
-        x = X
-        out2 = forward_func(X, rand)
-
-        try:
-            r = r[:, :, 0]
-        except:
-            pass
-
-        if r.max() < 0.1:
-            region_mask = np.greater(r.flatten() + 1., 0.5)
-        else:
-            region_mask = np.greater(r.flatten(), 0.5)
-
-        xx, xy = np.meshgrid(np.array(range(x.size(2))), np.array(range(x.size(3))))
-        xx = np.expand_dims(xx.flatten(), 1)
-        xy = np.expand_dims(xy.flatten(), 1)
-        xc = np.concatenate([xx, xy], 1)
-
-        xc = xc[region_mask, :]
-
-        np.random.shuffle(xc)
-
-        const2 = min(samps, xc.shape[0])
-
-        xx = xc[:const2, 0]
-        yy = xc[:const2, 1]
-
-        temp = X
-        temp_list = [temp[:, :, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
-        temp = torch.cat(temp_list, 2)
-
-        l2 = []
-        for i in range(len(out2)):
-
-            temp = out2[i]
-
-            if i > 0 and out2[i].size(2) < out2[i - 1].size(2):
-                xx = xx / 2.0
-                yy = yy / 2.0
-
-            xx = np.clip(xx, 0, temp.size(2) - 1).astype(np.int32)
-            yy = np.clip(yy, 0, temp.size(3) - 1).astype(np.int32)
-
-            temp_list = [temp[:, :, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
-            temp = torch.cat(temp_list, 2)
-
-            l2.append(temp.clone().detach())
-
-        out2 = [torch.cat([li.contiguous() for li in l2], 1)]
-
-        return out2
-
-    def forward_diff(self, X, inds=[1, 3, 5, 8, 11], rand=True):
-
-        inds = self.inds
-        l2 = self.forward_base(X, inds, rand)
-
-        out2 = [l2[i].contiguous() for i in inds]
-
-        for i in range(len(out2)):
-            temp = out2[i]
-            temp2 = F.pad(temp, (2, 2, 0, 0), value=1.)
-            temp3 = F.pad(temp, (0, 0, 2, 2), value=1.)
-            out2[i] = torch.cat(
-                [temp, temp2[:, :, :, 4:], temp2[:, :, :, :-4], temp3[:, :, 4:, :], temp3[:, :, :-4, :]], 1)
-
-        return out2
-'''
 
 
 class Nas(torch.nn.Module):
@@ -500,41 +72,23 @@ class Nas(torch.nn.Module):
         super(Nas, self).__init__()
         # vgg_pretrained_features = models.vgg16(pretrained=True).features
         model = NASNetALarge(num_classes=1001)
-
+        
+        #change directory from which to load the weights of Nasnet large to fit your file system
         model.load_state_dict(torch.load('nasnet_no_lin.pth'))
 
         model.eval()
 
         new_model = model
-        '''
-        self.vgg_layers = vgg_pretrained_features
-        self.slice1 = torch.nn.Sequential()
-        self.slice2 = torch.nn.Sequential()
-        self.slice3 = torch.nn.Sequential()
-        self.slice4 = torch.nn.Sequential()
-        '''
+
         self.new = new_model
+        
         for param in self.new.parameters():
             param.requires_grad = False
-        '''
-        for x in range(1):
-            self.slice1.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(1, 9):
-            self.slice2.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(9, 16):
-            self.slice3.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(16, 23):
-            self.slice4.add_module(str(x), vgg_pretrained_features[x])
-        '''
         if not requires_grad:
             for param in self.parameters():
                 param.requires_grad = False
 
         self.inds = range(11)
-        # self.layer_list = ['conv0', 'cell_stem_0', 'cell_stem_1', 'cell_0',  'cell_2', 'cell_4',
-        #          'reduction_cell_0', 'cell_6',  'cell_8', 'cell_10', 'reduction_cell_1',
-        #          'cell_12', 'cell_13', 'cell_14', 'cell_15', 'cell_16', 'cell_17']
-
         self.layer_list = ['conv0', 'cell_stem_0', 'cell_stem_1', 'cell_0', 'cell_1', 'cell_2', 'cell_3', 'cell_4',
                            'cell_5',
                            'reduction_cell_0', 'cell_6', 'cell_7', 'cell_8', 'cell_9', 'cell_10', 'cell_11',
@@ -579,53 +133,7 @@ class Nas(torch.nn.Module):
         else:
             l3 = [utils_go.to_device1(X)]
         count = 0
-        '''
-        if name == 'stylized':
-            self.layer_acq = self.layer_list
-            print("stylized : " , self.layer_acq)
-        elif name == 'content':
-            self.layer_acq = self.layer_list[2:]
-            print("content : " , self.layer_acq)
-        elif name == 'content for style':
-            self.layer_acq == self.layer_list[2:]
-            print("cfs : ", self.layer_acq)
-
-        else:
-            print("name in else : " , name)
-            self.layer_acq = self.layer_list
-            print("else : " , self.layer_acq)
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-
-        if scl == 6:
-            for i in self.layer_list:
-                if i in ['conv0', 'cell_stem_0']:
-                    x = getattr(self.new, i).forward(x.cpu())
-                    # print("i ok ", i)
-                elif i == 'cell_stem_1':
-                    x = getattr(self.new, i).forward(l2[-2].cpu(), x.cpu())
-
-                else:
-                    # print("else ok", i)
-                    # print("x " , x.size())
-                    # print("l2[-2]", l2[-2].size())
-                    x = getattr(self.new, i).forward(x.cpu(), l2[-2].cpu())
-                if i in self.layer_acquire:
-                    # print("rand : " , rand)
-                    # print("x size : ", x.size())
-                    # print("rand count : " , rand[count].max())
-                    if scl == 6:
-                        print("x size : ", x.size(), count)
-                        print("rand count : ", rand[count].max(), count)
-
-                        l3.append(torch.index_select(x.cpu(), 1, rand[count].cpu()))
-                    else:
-                        l3.append(torch.index_select(x, 1, rand[count].cuda()))
-
-                    l2.append(x)
-                    count += 1
-
-        else:
-        '''
+        
         gpu_2_list = []
         
         if scl <= 3:
@@ -639,13 +147,9 @@ class Nas(torch.nn.Module):
 
         for i in layer_list_in_use:
             if i in ['conv0', 'cell_stem_0']:
-                # print("x device : ", x.get_device())
                 x = getattr(self.new, i).forward(x)
-                # print("x type : " , x.type())
-                # print("i ok ", i)
             elif i == 'cell_stem_1':
                 x = getattr(self.new, i).forward(l2[-2], x)
-                # print("x type : " , x.type())
 
             else:
                 # print("else ok", i)
@@ -679,7 +183,6 @@ class Nas(torch.nn.Module):
                     x = getattr(utils_go.to_device(self.new), i).forward(utils_go.to_device(x),
                                                                          utils_go.to_device(l2[-2]))
 
-                # print("x type : " , x.type())
 
             if (name == 'content' or name == 'content for style'):
                 if scl == 1:
@@ -790,7 +293,6 @@ class Nas(torch.nn.Module):
                         # print("x size : ", x.size())
                         # print("rand count : " , rand[count].max())
                         if scl == 10 and name == 'utils':
-                            #print("in the if vgg --------------->")
                             l3.append(utils_go.to_device2(x))                            
                         else:
                             l3.append(utils_go.to_device1(x))
@@ -798,44 +300,7 @@ class Nas(torch.nn.Module):
             if count > 3:
                 l2.pop(0)
             count += 1
-        # print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
         return l3
-
-        '''
-            try:
-                print("x size : @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ " , x.size())
-                print("i is : ", i)
-                x = getattr(self.new, i).forward(x) #[:,:,1:-1,1:-1]
-                print("this is x : " , x.size(), i)
-                print("x size : ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>>>>>>>>>>>~~~>~>~>~>~>>~>~>~>~>~>~>~>~>~~>" , x.size())
-            except:
-                print(i, 'fail 1')
-                try:
-                    if i == 'cell_stem_1':
-                        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! this is i , x , l2[-1] : " , i, x.size(), l2[-2].size())
-
-                        x = getattr(self.new, i).forward(l2[-2], x)
-                        print(i, "success ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^6")
-                    else:
-                        print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% this is i , x , l2[-1] : " , i, x.size(), l2[-2].size())
-
-                        x = getattr(self.new,i).forward(x,l2[-2])
-                        print(i, "success ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^6")
-
-                except:
-                    print("fail fail fail fail fail fail fail ")
-                    print(i, 'fail 2')
-                    print("this is x : " , x)
-                    print("this is l2[-2] ", l2[-2])
-                    print('get attr : ' , getattr(self.new,i))
-                    print("i", i)
-                    x = getattr(self.new, i).forward(x, l2[-2])
-
-                    print("fail fail fail fail fail fail fail ")
-
-                    pass
-            '''
-        # print("RETURNING```````````````````````````````````````````````````````````````````````````````````````````````````````````")
 
     def forward(self, scl, X, rand, name):
 
@@ -845,10 +310,6 @@ class Nas(torch.nn.Module):
         l2 = self.forward_base(name, scl, X, rand)
         out2 = l2
 
-        # print("in forward : ")
-        # for i in out2:
-        #    print("x type : " , i.type())
-
         return out2
 
     def forward_cat_large(self, scl, X, r, inds=[1, 3, 5, 8, 11], rand=True, samps=100, forward_func=None,
@@ -857,20 +318,10 @@ class Nas(torch.nn.Module):
         if not forward_func:
             forward_func = self.forward
 
-        # print("in forward cat ----------------------------------------->")
-
-        # print("name is ------------------------------------------------>" , name)
-        # print("scl is ------------------------------------------------>" , scl)
-        # print("X is ------------------------------------------------>" , X)
-        # print("r is ------------------------------------------------>" , r)
-
-        # print("leaving f cat ------------------------------------------>")
 
         x = X
-        # print("rand_whoa  :" , rand_whoa)
+
         out2 = forward_func(scl, X, rand_whoa, name)
-        # for i in out2:
-        #    print("very original 1010101001010101010101010101010010101010101010101: " , i.size() )
 
         try:
             r = r[:, :, 0]
@@ -905,7 +356,6 @@ class Nas(torch.nn.Module):
 
             temp = out2[i]
 
-            # print("temp size orignal 999999999999999999999999999 : " , temp.size())
 
             if i > 0 and out2[i].size(2) < out2[i - 1].size(2):
                 xx = xx / 2.0
@@ -917,7 +367,6 @@ class Nas(torch.nn.Module):
             temp_list = [temp[:, :, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
 
             temp = torch.cat(temp_list, 2)
-            # print("temp sample : 8888888888888888888888888888888888888888888888888888888" , temp.size())
 
             l2.append(temp.clone().detach())
 
@@ -968,9 +417,6 @@ class Nas_Content(torch.nn.Module):
                 param.requires_grad = False
 
         self.inds = range(11)
-        # self.layer_list = ['conv0', 'cell_stem_0', 'cell_stem_1', 'cell_0',  'cell_2', 'cell_4',
-        #          'reduction_cell_0', 'cell_6',  'cell_8', 'cell_10', 'reduction_cell_1',
-        #          'cell_12', 'cell_13', 'cell_14', 'cell_15', 'cell_16', 'cell_17']
 
         self.layer_list = ['conv0', 'cell_stem_0', 'cell_stem_1', 'cell_0', 'cell_1', 'cell_2', 'cell_3', 'cell_4',
                            'cell_5',
@@ -989,39 +435,25 @@ class Nas_Content(torch.nn.Module):
         count = 0
         for i in self.layer_list:
             try:
-                # print("x size : @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ " , x.size())
-                # print("i is : ", i)
                 x = getattr(self.new, i).forward(x)  # [:,:,1:-1,1:-1]
-                # print("this is x : " , x.size(), i)
-                # print("x size : ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>>>>>>>>>>>~~~>~>~>~>~>>~>~>~>~>~>~>~>~>~~>" , x.size())
             except:
-                # print(i, 'fail 1')
                 pass
             try:
                 if i == 'cell_stem_1':
-                    #    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! this is i , x , l2[-1] : " , i, x.size(), l2[-2].size())
 
                     x = getattr(self.new, i).forward(l2[-2], x)
-                    # print(i, "success ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^6")
                 else:
-                    #    print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% this is i , x , l2[-1] : " , i, x.size(), l2[-2].size())
 
                     x = getattr(self.new, i).forward(x, l2[-2])
-                #    print(i, "success ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^6")
 
             except:
-                # print(i, 'fail 2')
 
                 pass
 
             if i in self.layer_acquire:
-                # print("rand : " , rand)
-                # print("x size : ", x.size())
-                # print("rand count : " , rand[count].max())
                 l3.append(torch.index_select(x, 1, rand[count].cuda()))
             l2.append(x)
             count += 1
-        # print("RETURNING```````````````````````````````````````````````````````````````````````````````````````````````````````````")
 
         return l3
 
@@ -1041,10 +473,7 @@ class Nas_Content(torch.nn.Module):
             forward_func = self.forward
 
         x = X
-        # print("rand_whoa  :" , rand_whoa)
         out2 = forward_func(X, rand_whoa)
-        # for i in out2:
-        #    print("very original 1010101001010101010101010101010010101010101010101: " , i.size() )
 
         try:
             r = r[:, :, 0]
@@ -1079,8 +508,6 @@ class Nas_Content(torch.nn.Module):
 
             temp = out2[i]
 
-            # print("temp size orignal 999999999999999999999999999 : " , temp.size())
-
             if i > 0 and out2[i].size(2) < out2[i - 1].size(2):
                 xx = xx / 2.0
                 yy = yy / 2.0
@@ -1091,7 +518,6 @@ class Nas_Content(torch.nn.Module):
             temp_list = [temp[:, :, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
 
             temp = torch.cat(temp_list, 2)
-            # print("temp sample : 8888888888888888888888888888888888888888888888888888888" , temp.size())
 
             l2.append(temp.clone().detach())
 
@@ -1121,18 +547,6 @@ class Nasnet(torch.nn.Module):
         super(Nasnet, self).__init__()
         self.nas = new_model
 
-        # self.slice1 = torch.nn.Sequential()
-        # self.slice2 = torch.nn.Sequential()
-        # self.slice3 = torch.nn.Sequential()
-        # self.slice4 = torch.nn.Sequential()
-        # for x in range(1):
-        #    self.slice1.add_module(str(x), vgg_pretrained_features[x])
-        # for x in range(1, 9):
-        #    self.slice2.add_module(str(x), vgg_pretrained_features[x])
-        # for x in range(9, 16):
-        #    self.slice3.add_module(str(x), vgg_pretrained_features[x])
-        # for x in range(16, 23):
-        #    self.slice4.add_module(str(x), vgg_pretrained_features[x])
         if not requires_grad:
             for param in self.nas.parameters():
                 param.requires_grad = False
@@ -2074,423 +1488,5 @@ def vgg19_bn(pretrained=False, progress=True, **kwargs):
     return _vgg('vgg19_bn', 'E', True, pretrained, progress, **kwargs)
 
 
-'''
-import sys
-sys.path.append('/content/PytorchInsight/classification/models/')
-sys.path.append('/content/PytorchInsight/classification/models/imagenet')
 
-from common_head import *
 
-class SpatialGroupEnhance(nn.Module):
-    def __init__(self, groups = 64):
-        super(SpatialGroupEnhance, self).__init__()
-        self.groups   = groups
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.weight   = Parameter(torch.zeros(1, groups, 1, 1))
-        self.bias     = Parameter(torch.ones(1, groups, 1, 1))
-        self.sig      = nn.Sigmoid()
-
-    def forward(self, x): # (b, c, h, w)
-        b, c, h, w = x.size()
-        x = x.view(b * self.groups, -1, h, w)
-        xn = x * self.avg_pool(x)
-        xn = xn.sum(dim=1, keepdim=True)
-        t = xn.view(b * self.groups, -1)
-        t = t - t.mean(dim=1, keepdim=True)
-        std = t.std(dim=1, keepdim=True) + 1e-5
-        t = t / std
-        t = t.view(b, self.groups, h, w)
-        t = t * self.weight + self.bias
-        t = t.view(b * self.groups, 1, h, w)
-        x = x * self.sig(t)
-        x = x.view(b, c, h, w)
-        return x
-
-def conv3x3(in_planes, out_planes, stride=1):
-    """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, bias=False)
-
-
-def conv1x1(in_planes, out_planes, stride=1):
-    """1x1 convolution"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
-
-
-class BasicBlock(nn.Module):
-    expansion = 1
-
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
-        super(BasicBlock, self).__init__()
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.downsample = downsample
-        self.stride = stride
-        self.sge = SpatialGroupEnhance(64)
-
-    def forward(self, x):
-        identity = x
-
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out = self.sge(out)
-
-        if self.downsample is not None:
-            identity = self.downsample(x)
-
-        out += identity
-        out = self.relu(out)
-
-        return out
-
-class Bottleneck(nn.Module):
-    expansion = 4
-
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
-        super(Bottleneck, self).__init__()
-        self.conv1 = conv1x1(inplanes, planes)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = conv3x3(planes, planes, stride)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = conv1x1(planes, planes * self.expansion)
-        self.bn3 = nn.BatchNorm2d(planes * self.expansion)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.relu2 = nn.ReLU(inplace=True)
-        self.relu3 = nn.ReLU(inplace=True)
-
-        self.downsample = downsample
-        self.stride = stride
-        self.sge    = SpatialGroupEnhance(64).cuda()
-
-    def forward(self, x):
-        identity = x
-        #print("x 0", x.size())
-
-        out = self.conv1(x)
-        #print("out 0", out.size())
-
-        out = self.bn1(out)
-        #print("out 1", out.size())
-
-        out = self.relu1(out)
-        #print("out 1", out.size())
-
-        out = self.conv2(out)
-        #print("out 3", out.size())
-
-        out = self.bn2(out)
-        #print("out 4", out.size())
-
-        out = self.relu2(out)
-        #print("out 2", out.size())
-
-        out = self.conv3(out)
-        #print("out 6", out.size())
-
-        out = self.bn3(out)
-        #print("out 7 : " , out.size())
-        out = self.sge(out.cuda())
-        #print("out 8", out.size())
-
-        if self.downsample is not None:
-            identity = self.downsample(x)
-
-        out += identity
-        out = self.relu3(out)
-        #print("out 3 : " , out.size())
-        return out
-
-
-
-
-class ResNet(nn.Module):
-
-    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False):
-        super(ResNet, self).__init__()
-        self.inplanes = 64
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
-                               bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-
-        # Zero-initialize the last BN in each residual branch,
-        # so that the residual branch starts with zeros, and each residual block behaves like an identity.
-        # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
-        if zero_init_residual:
-            for m in self.modules():
-                if isinstance(m, Bottleneck):
-                    nn.init.constant_(m.bn3.weight, 0)
-                elif isinstance(m, BasicBlock):
-                    nn.init.constant_(m.bn2.weight, 0)
-
-    def _make_layer(self, block, planes, blocks, stride=1):
-        downsample = None
-        if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(
-                conv1x1(self.inplanes, planes * block.expansion, stride),
-                nn.BatchNorm2d(planes * block.expansion),
-            )
-
-        layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
-        self.inplanes = planes * block.expansion
-        for _ in range(1, blocks):
-            layers.append(block(self.inplanes, planes))
-
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        #print("0")
-        x = self.conv1(x)
-        #print("1")
-
-        x = self.bn1(x)
-        #print("2")
-
-        x = self.relu(x)
-        #print("3")
-
-        x = self.maxpool(x)
-        #print("4")
-
-        x = self.layer1(x)
-        #print("5")
-
-        x = self.layer2(x)
-        #print("6")
-
-        x = self.layer3(x)
-        x = self.layer4(x)
-
-        x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-
-        return x
-
-def sge_resnet18(pretrained=False, **kwargs):
-    """Constructs a ResNet-18 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
-    return model
-
-def sge_resnet34(pretrained=False, **kwargs):
-    """Constructs a ResNet-34 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
-    return model
-
-def sge_resnet50(pretrained=False, **kwargs):
-    """Constructs a ResNet-50 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
-    return model
-
-def sge_resnet101(pretrained=False, **kwargs):
-    """Constructs a ResNet-101 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
-    return model
-
-def sge_resnet152(pretrained=False, **kwargs):
-    """Constructs a ResNet-152 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
-    return model
-
-sd = torch.load('/content/drive/My Drive/sge_resnet50.pth.tar')
-
-new_sd = sd['state_dict']
-
-sys.path.append('/content/PytorchInsight/classification/models/')
-import imagenet as customized_models
-
-#model_sge = customized_models.__dict__['sge_resnet50']()
-model_sge = sge_resnet50()
-model_sge = torch.nn.DataParallel(model_sge).cuda()
-
-t = model_sge.state_dict()
-c = new_sd
-
-flag = True
-for k in t:
-    if k not in c:
-        print('not in loading dict! fill it', k, t[k])
-        c[k] = t[k]
-        flag = False
-c_copy = c.copy()
-for k in c:
-    if k not in t:
-        print("should del : ", k)
-        del c_copy[k]
-        flag = False
-
-model_sge.load_state_dict(c_copy)
-
-for param in model_sge.parameters():
-    param.requires_grad = False
-    '''
-
-
- torch.nn.Sequential()
-        self.slice3 = torch.nn.Sequential()
-        self.slice4 = torch.nn.Sequential()
-        for x in range(1):
-            self.slice1.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(1, 9):
-            self.slice2.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(9, 16):
-            self.slice3.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(16, 23):
-            self.slice4.add_module(str(x), vgg_pretrained_features[x])
-        if not requires_grad:
-            for param in self.parameters():
-                param.requires_grad = False
-
-        self.inds = range(11)
-        
-        mean = torch.Tensor([0.485, 0.456, 0.406]).view(1,3,1,1)
-        std = torch.Tensor([0.229, 0.224, 0.225]).view(1,3,1,1)
-        
-        self.register_buffer('mu', mean)
-        self.register_buffer('sig', std)
-
-    def forward_base(self,X,rand):
-        inds = self.inds
-
-        x = (X-self.mu)/self.sig
-
-
-        l2 = [X]
-        for i in range(30):
-            try:
-                x =  self.vgg_layers[i].forward(x)#[:,:,1:-1,1:-1]
-            except:
-                pass
-            if i in [1,3,6,8,11,13,15,22,29]:
-                l2.append(x)
-
-        return l2
-
-
-    def forward(self, X, inds=[1,3,5,8,11], rand=True):
-
-
-        inds = self.inds
-
-        x = X
-        l2 = self.forward_base(X,rand)
-        out2 = l2
-
-        return out2
-
-    def forward_cat(self, X, r, inds=[1,3,5,8,11], rand=True,samps=100, forward_func=None):
-
-        if not forward_func:
-            forward_func = self.forward
-
-        x = X
-        out2 = forward_func(X,rand)
-
-        try:
-            r = r[:,:,0]
-        except:
-            pass
-
-        if r.max()<0.1:
-            region_mask = np.greater(r.flatten()+1.,0.5)
-        else:
-            region_mask = np.greater(r.flatten(),0.5)
-
-        xx,xy = np.meshgrid(np.array(range(x.size(2))), np.array(range(x.size(3))) )
-        xx = np.expand_dims(xx.flatten(),1)
-        xy = np.expand_dims(xy.flatten(),1)
-        xc = np.concatenate([xx,xy],1)
-        
-        xc = xc[region_mask,:]
-
-        const2 = min(samps,xc.shape[0])
-
-
-        global use_random
-        if use_random:
-            np.random.shuffle(xc)
-        else:
-            xc = xc[::(xc.shape[0]//const2),:]
-
-        xx = xc[:const2,0]
-        yy = xc[:const2,1]
-
-        temp = X
-        temp_list = [ temp[:,:, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
-        temp = torch.cat(temp_list,2)
-
-        l2 = []
-        for i in range(len(out2)):
-
-            temp = out2[i]
-
-            if i>0 and out2[i].size(2) < out2[i-1].size(2):
-                xx = xx/2.0
-                yy = yy/2.0
-
-            xx = np.clip(xx,0,temp.size(2)-1).astype(np.int32)
-            yy = np.clip(yy,0,temp.size(3)-1).astype(np.int32)
-
-            temp_list = [ temp[:,:, xx[j], yy[j]].unsqueeze(2).unsqueeze(3) for j in range(const2)]
-            temp = torch.cat(temp_list,2)
-
-            l2.append(temp.clone().detach())
-
-        out2 = [torch.cat([li.contiguous() for li in l2],1)]
-
-        return out2
-
-    def forward_diff(self, X, inds=[1,3,5,8,11], rand=True):
-
-
-        inds = self.inds
-        l2 = self.forward_base(X,inds,rand)
-
-        out2 = [l2[i].contiguous() for i in inds]
-
-
-        for i in range(len(out2)):
-            temp = out2[i]
-            temp2 = F.pad(temp,(2,2,0,0),value=1.)
-            temp3 = F.pad(temp,(0,0,2,2),value=1.)
-            out2[i] = torch.cat([temp,temp2[:,:,:,4:],temp2[:,:,:,:-4],temp3[:,:,4:,:],temp3[:,:,:-4,:]],1)
-
-
-        return out2
