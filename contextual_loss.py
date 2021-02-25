@@ -83,9 +83,7 @@ def get_DMat(scl, X, Y, h=1.0, cb=0, splits=[128 * 3 + 256 * 3 + 512 * 4], cos_d
     n = X.size(0)
     m = Y.size(0)
     M = utils_go.match_device(X, Variable(torch.zeros(n, m)) )
-    
-    #print("len splits : " , len(splits))
-    
+       
     
     if scl == 1:
         pre_init = 0
@@ -212,7 +210,6 @@ def remd_loss_OT(long_side, cut, scl, X1, Y1, h=None, cos_d=True,
 
     loss_out = 0
     if d == 3:
-        # loss1 = SamplesLoss(loss="sinkhorn", p=2,  blur=.01)
         loss1 = SamplesLoss(loss="sinkhorn", p=2, blur=.01, cost=pairwise_distances_cos_and_l2)
     else:
         loss1 = SamplesLoss(loss="sinkhorn", p=2, blur=.01, cost=pairwise_distances_cos2)
