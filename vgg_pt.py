@@ -185,27 +185,15 @@ class Nas(torch.nn.Module):
             if (name == 'content' or name == 'content for style'):
                 if scl == 1:
                     if i in self.layer_list[:16]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         l3.append(utils_go.to_device1(x))
                 elif scl == 2:
                     if i in self.layer_list[:16]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         l3.append(utils_go.to_device1(x))
                 elif scl == 3:
                     if i in self.layer_list[:16]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         l3.append(utils_go.to_device1(x))
                 elif scl >= 4 and scl <8:
                     if i in self.layer_list[:16]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         if scl == 10 and name == 'utils':
                             l3.append(utils_go.to_device2(x))                            
                         else:
@@ -213,62 +201,38 @@ class Nas(torch.nn.Module):
 
                 elif scl == 11:
                     if i in self.layer_list[:21]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         if scl == 11:
-                            #print("in the if vgg --------------->")
-
                             l3.append(utils_go.to_device2(x))                            
                         else:
                             l3.append(utils_go.to_device1(x))
 
                 else:
                     if i in self.layer_list[:20]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         if scl == 10 and name == 'utils':
-                            #print("in the if vgg --------------->")
-
                             l3.append(utils_go.to_device2(x))                            
                         else:
                             l3.append(utils_go.to_device1(x))
             else:
                 if scl == 1:
                     if i in self.layer_list[:16]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
-                        # print("x type pre select : " , x.type() )
-                        # print("x type post select : ", torch.index_select(x,1,rand[count].cuda() ).type())
                         if scl == 10 and name == 'utils':
                             l3.append(utils_go.to_device2(x))                            
                         else:
                             l3.append(utils_go.to_device1(x))
                 elif scl == 2:
                     if i in self.layer_list[:16]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         if scl == 10 and name == 'utils':
                             l3.append(utils_go.to_device2(x))                            
                         else:
                             l3.append(utils_go.to_device1(x))
                 elif scl == 3:
                     if i in self.layer_list[:16]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         if scl == 10 and name == 'utils':
                             l3.append(utils_go.to_device2(x))                            
                         else:
                             l3.append(utils_go.to_device1(x))
                 elif scl >= 4 and scl <8:
                     if i in self.layer_list[:16]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         if scl == 10 and name == 'utils':
                             l3.append(utils_go.to_device2(x))                            
                         else:
@@ -276,20 +240,12 @@ class Nas(torch.nn.Module):
 
                 elif scl == 11:
                     if i in self.layer_list[:21]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         if scl == 11 and name != 'utils':
-                            #print("in the if vgg --------------->")
-
                             l3.append(utils_go.to_device2(x))                            
                         else:
                             l3.append(utils_go.to_device1(x))
                 else:
                     if i in self.layer_list[:20]:
-                        # print("rand : " , rand)
-                        # print("x size : ", x.size())
-                        # print("rand count : " , rand[count].max())
                         if scl == 10 and name == 'utils':
                             l3.append(utils_go.to_device2(x))                            
                         else:
