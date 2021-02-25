@@ -201,19 +201,17 @@ def run_st(content_path, style_path, content_weight, content_iterate, use_iterat
 
     counter = 0
 
+    # We use scl_list to control how big the images scale up in addition to controlling how much we subsample the content and style images
+    
     scl_list = [1] + [2] + [3] + [4] + [5] + [6] + [7]*1 + [8]*1 + [9]*1 + [10]*1 + [11]*1 # + [6]*2 + [7]*2 +[8]*2 + [9]*2 +[10]*2 + [11]*2  #[1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 5, 5, 5, 6, 6, 6, 7, 7, 7] # 2,3,4,5,3,4,5,4,5]
-
-    # new sizing: 1 = 64, 2 = 128, 3 = 256, 4 = 384 , 5 = 512 , 6 = 768 , 7 = 1024, 8 = 1536
 
     for j, scl in enumerate(scl_list):
         print("counter is : ", counter)
         content_weight = content_weight_freeze * 2.0 ** (max_scl - int(scl))
-        #size_list = [64, 64, 64, 256, 256, 256, 384, 384, 384, 512, 512, 512, 768, 768, 768, 1024, 1024,
-        #             1024, 512, 512, 512, 768, 768, 768, 1024, 1024, 1024 ]
+        
+        # size_list lists the sizes of images we scale to. The largest size is 2048 x 2048, smallest is 64 x 64
         size_list = [64] + [128] + [256] + [384] + [512] + [768] + [1024]*1 + [1280]*1  + [1536]*1 + [1856]*1 + [2048]*1 # + [768]*2 + [1024]*2 +[1280]*2 + [1536]*2 +[1856]*2 + [2048]*2
         long_side = size_list[j]  # smll_sz * (2 ** (int(scl) - 1))
-        print("content_weight : ", content_weight)
-        print("long side : ", long_side)
         lr = 2e-3
 
         content_im = utils_go.to_device(
@@ -223,36 +221,21 @@ def run_st(content_path, style_path, content_weight, content_iterate, use_iterat
                                                                                                         keepdim=True).mean(
             3, keepdim=True).half()
 
-        print("content im mean : ", content_im_mean.max(), content_im_mean.min())
-
         ### Compute bottom level of laplaccian pyramid for content image at current scale ###
         lap = content_im.clone() - F.upsample(
             F.upsample(content_im, (content_im.size(2) // 2, content_im.size(3) // 2), mode='bilinear'),
             (content_im.size(2), content_im.size(3)), mode='bilinear')
 
-        # canvas = F.upsample(torch.clamp(lap,-0.5,0.5),(content_im_big.size(2),content_im_big.size(3)),mode='bilinear')[0].data.cpu().numpy().transpose(1,2,0)
-
-        # if scl == 1:
-        #    canvas = F.upsample(content_im,(content_im.size(2)//2,content_im.size(3)//2),mode='bilinear')[0].data.cpu().numpy().transpose(1,2,0)
-
         ### Initialize by zeroing out all but highest and lowest levels of Laplaccian Pyramid ###
         if scl == 1:
             if use_iterate and counter == 0:
-                # stylized_im = Variable(content_im_mean+lap)
                 stylized_im = utils_go.to_device(
                     Variable(load_path_for_pytorch(content_iterate, smll_sz, force_scale=True).unsqueeze(0))) + lap
-                print("in use iterate")
             elif not use_iterate and counter == 0:
                 stylized_im = Variable(content_im_mean + lap)
-                print("in not use iterate")
-                print("stylized_im size : ", stylized_im.size())
             else:
                 stylized_im = F.upsample(stylized_im.clone(), (content_im.size(2), content_im.size(3)),
                                          mode='bilinear') + lap
-                print("in else scl 1 iterate")
-
-            # else:
-            #   stylized_im = Variable(content_im.data)
 
         ### Otherwise bilinearly upsample previous scales output and add back bottom level of Laplaccian pyramid for current scale of content image ###
 
@@ -309,45 +292,21 @@ def run_st(content_path, style_path, content_weight, content_iterate, use_iterat
         if long_side == 1024:
             lr = (0.5e-3)/2
             content_weight = 0.75
-            #content_weight = 1.0
         if long_side > 1024:
             lr = (0.375e-3)/2
             content_weight = 0.75
-            #content_weight = 1.0
         if long_side == 384:
             content_weight = 2.25
-            #content_weight = 3
         if long_side == 768:
             content_weight = 1.5
-            #content_weight = 2
         if long_side == 1536:
             content_weight = 0.5
 
-            #content_weight = 0.875
         if long_side >= 2048:
             lr = (0.25e-3)/2
             content_weight = 0.375
 
-            #content_weight = 0.5
-
         ### Style Transfer at this scale ###
-        '''
-        if scl == 6:
-            stylized_im, final_loss = style_transfer(stylized_im.cpu(), content_im.cpu(), style_path, output_path, scl, long_side, 0., use_guidance=use_guidance, coords=coords, content_weight=content_weight, lr=lr, regions=regions)
-        else:
-        '''
-
-        #        if scl == 1:
-        #            content_weight = 2
-        #        if scl == 2:
-        #            content_weight = 2
-        #        if scl == 3:
-        #            content_weight = 8
-        #        if scl == 4:
-        #            content_weight = 4
-
-        print("content weight : ", content_weight)
-
         if long_side < 1536:
 
             stylized_im, final_loss = style_transfer_large(counter, stylized_im, content_im, style_path, output_path,
@@ -360,24 +319,6 @@ def run_st(content_path, style_path, content_weight, content_iterate, use_iterat
                                                            use_guidance=use_guidance, coords=coords,
                                                            content_weight=content_weight, lr=lr, regions=regions)
 
-        '''
-        if counter == 17:
-            style_image = load(style_path)[..., :3]  # removes transparency cty
-
-            print("stlized : ", stylized_im.detach().clone().cpu().numpy().shape)
-
-            print("pre style image : ", style_image.shape)
-            #stylized_im = torch.from_numpy(match_color(
-            #    torch.transpose(torch.transpose(stylized_im.detach().clone().squeeze().cpu(), 0, 1), 1, 2).numpy(),
-            #    style_image ))
-            stylized_im = torch.from_numpy(match_histograms(
-                torch.transpose(torch.transpose(stylized_im.detach().clone().squeeze().cpu(), 0, 1), 1, 2).numpy(),
-                style_image, multichannel=True ))
-
-            print("final stylized_im : ", stylized_im.size())
-
-            stylized_im = torch.transpose(torch.transpose(stylized_im, 1, 2), 0, 1).unsqueeze(0).type(torch.FloatTensor).cuda()
-        '''
 
         canvas = torch.clamp(stylized_im, -0.5, 0.5)[0].data.cpu().numpy().transpose(1, 2, 0)
 
@@ -410,7 +351,10 @@ if __name__ == '__main__':
     content_path = sys.argv[1]
     style_path = sys.argv[2]
     content_weight = float(sys.argv[3])
+    
+    #the use_iterate command enables you to start scaling the size of an intermediate image instead of starting from scratch
     use_iterate = 'iterate' in sys.argv
+    
     print("sys.argv : ", sys.argv, type(sys.argv))
     super_res = 'super_res' in sys.argv
     if use_iterate:
@@ -419,11 +363,6 @@ if __name__ == '__main__':
         content_iterate = None
 
     max_scl = 5
-
-    print("content_path : ", content_path)
-    print("style_path : ", style_path)
-    print("content_weight : ", content_weight)
-    print("use_iterate : ", use_iterate)
 
     use_guidance_region = '-gr' in sys.argv
     use_guidance_points = False
