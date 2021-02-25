@@ -249,7 +249,7 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
     print("scale time is :  ----------------------------------------------> ", end - start)
     return stylized_im, ell
 
-# we ha
+# we use another style transfer algorithm for larger images. This code should be merged into the above
 def style_transfer_large(counter, stylized_im, content_im, style_path, output_path, scl, long_side, mask,
                          content_weight=0., use_guidance=False, regions=0, coords=0, lr=2e-3):
     start = time.time()
