@@ -21,28 +21,6 @@ import torch.nn.functional as F
 from contextual_loss import *
 import utils_go
 
-'''
-class Depth_Prepare(nn.Module):
-    def __init__(self):
-        super(Depth_Prepare, self).__init__()
-        self.normalizer = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
-    def forward(self, input):
-        print("size of input is : " , input.size())
-
-        out = F.upsample(input, size=(228, 304), mode='bilinear', align_corners=False)
-        out = self.normalizer(out)
-        #out = torch.cat([torch_img, torch.ones_like(torch_img[:,0,:,:]).unsqueeze(0)],dim=1)
-        print("out size is : ", out.size())
-        return out
-
-DP = Depth_Prepare()
-depth_model = define_model(is_resnet=True, is_densenet=False, is_senet=False)
-depth_model = torch.nn.DataParallel(depth_model).cuda()
-depth_model.load_state_dict(torch.load('/content/pretrained_model/model_resnet'))
-'''
-
-
 class objective_class():
 
     def __init__(self, objective='remd_dp'):
@@ -68,64 +46,7 @@ class objective_class():
         # (Choose Features from Same locations in Stylized Image & Content Image) #
         final_loss = 0.
         for ri in range(len(self.rand_ixx.keys())):
-            '''
-            x = new_img.clone()
-            image = DP(x)
-            output = depth_model(image)
-            content_DP = DP(new_content)
-
-            depth = depth_model(content_DP)
-
-            ones = torch.ones(depth.size(0), 1, depth.size(2), depth.size(3)).float().cuda()
-            ones = torch.autograd.Variable(ones)
-
-            depth_grad = get_gradient(depth)
-            output_grad = get_gradient(output)
-            depth_grad_dx = depth_grad[:, 0, :, :].contiguous().view_as(depth)
-            depth_grad_dy = depth_grad[:, 1, :, :].contiguous().view_as(depth)
-            output_grad_dx = output_grad[:, 0, :, :].contiguous().view_as(depth)
-            output_grad_dy = output_grad[:, 1, :, :].contiguous().view_as(depth)
-
-            depth_normal = torch.cat((-depth_grad_dx, -depth_grad_dy, ones), 1)
-            output_normal = torch.cat((-output_grad_dx, -output_grad_dy, ones), 1)
-
-            # depth_normal = F.normalize(depth_normal, p=2, dim=1)
-            # output_normal = F.normalize(output_normal, p=2, dim=1)
-
-            # loss_depth = torch.log(torch.abs(output - depth) + 0.5).mean()
-            # loss_dx = torch.log(torch.abs(output_grad_dx - depth_grad_dx) + 0.5).mean()
-            # loss_dy = torch.log(torch.abs(output_grad_dy - depth_grad_dy) + 0.5).mean()
-            # loss_normal = torch.abs(1 - cos(output_normal, depth_normal)).mean()
-
-            loss_depth = (torch.abs(output - depth) + 0.5).mean()
-            loss_dx = (torch.abs(output_grad_dx - depth_grad_dx) + 0.5).mean()
-            loss_dy = (torch.abs(output_grad_dy - depth_grad_dy) + 0.5).mean()
-            loss_normal = torch.abs(1 - cos(output_normal, depth_normal)).mean()
-
-            loss_content_depth = (loss_depth + loss_normal + (loss_dx + loss_dy)) * 10
-            # loss_ok = loss.clone().detach()
-            # loss_content_depth = loss_content_depth.clamp(-loss_ok*0.01, loss_ok*0.05)
-            # loss_content_depth += 1000 * mse(depth_img, content_depth_img)
-
-            print("loss_content_depth : ", loss_content_depth)
-            '''
-            # print("this is self.rand_ixx.keys() : " , self.rand_ixx.keys() )
-            # print("self.rand_ixx : " , self.rand_ixx[0])
-            # print("z_x_style : ", z_x_style[0].size())
-            # print("z_x_content : " , z_x_content[0].size())
             xx, xy, yx = self.get_feature_inds(scl, ri=ri)
-            # print("this is ri : " , ri)
-            # print("thi is self.get_feature_inds 1 : " , len(xx) )
-            # print("thi is self.get_feature_inds 2 : " , len(xy) )
-            # print("thi is self.get_feature_inds 3 : " , len(yx) )
-            # print("z_x length : " , len(z_x))
-            # print("z_c length : " , len(z_c))
-            # print("this is z_x : " , z_x[0].size())
-            # print("this is z_c : " , z_c[0].size())
-            # for i in range(0,  len(z_x_content) ):
-            #    print("z x content : " , z_x_content[i].size())
-            # for i in z_x_content:
-            #    print("slot size : " , i.size())
 
             if 1:
                 x_st, c_st = self.spatial_feature_extract(z_x_content, z_c, xx, xy, scl)
@@ -137,7 +58,7 @@ class objective_class():
                 gx_st, gc_st = self.spatial_feature_extract(z_x_content, z_c, gxx, gxy)
 
             d = z_s[ri][0].size(1)
-            # print("this is d : " , d)
+
             z_st = z_s[ri][0].view(1, d, -1, 1)
 
             ## Compute Content Loss ##
@@ -149,7 +70,6 @@ class objective_class():
             else:
 
                 ell_content = utils_go.to_device(content_loss_func(long_side, cut, scl, utils_go.to_device1(x_st[:, :, :, :]), utils_go.to_device1(c_st[:, :, :, :])))
-
 
             print("ec", ell_content)
 
@@ -214,7 +134,6 @@ class objective_class():
 
                 else:
                     moment_ell = utils_go.to_device(moment_loss(scl, utils_go.to_device3(x_st[:, :-2, :, :]), utils_go.to_device3(z_st), moments=[1, 2]))
-                print("me 1", moment_ell)
 
             ### Add Pallette Matching Loss ###
             content_weight_frac = 1. / max(content_weight, 1.)
@@ -251,7 +170,6 @@ class objective_class():
                 moment_ell_1 = content_weight_frac * \
                                utils_go.to_device(style_loss_func(long_side, cut, scl, utils_go.to_device3(x_st[:, :3, :, :]), utils_go.to_device3(z_st[:, :3, :, :]), utils_go.to_device3(self.z_dist), splits=[3])[0])
 
-            print("me 2", moment_ell_1)
             moment_ell += moment_ell_1.squeeze()
 
             ### Combine Terms and Normalize ###
@@ -340,17 +258,13 @@ class objective_class():
             if i > 0 and z_x[i - 1].size(2) > z_x[i].size(2):
                 xx = xx / 2.0
                 xy = xy / 2.0
-
-            #   print("temp : " , temp.size())
-            #   print("temp2  :" , temp2.size())
+                
             xxm = np.floor(xx).astype(np.float32)
             xxr = xx - xxm
 
             xym = np.floor(xy).astype(np.float32)
             xyr = xy - xym
 
-            # print("temp2 size : " , temp2.size() )
-            # print("temp size : ", temp.size())
             if scl == 11:
                 w00 = utils_go.to_device2(torch.from_numpy((1. - xxr) * (1. - xyr))).float().unsqueeze(0).unsqueeze(
                     1).unsqueeze(3)
@@ -381,7 +295,6 @@ class objective_class():
 
             temp2 = temp2[:, :, s00, :].mul_(w00).add_(temp2[:, :, s01, :].mul_(w01)).add_(
                 temp2[:, :, s10, :].mul_(w10)).add_(temp2[:, :, s11, :].mul_(w11))
-            # print("size of temp : " , temp.size())
             l2.append(temp)
             l3.append(temp2)
 
@@ -417,7 +330,7 @@ class objective_class():
             np.random.shuffle(self.rand_iy[ri][i])
 
     def get_feature_inds(self, scl=1, ri=0, i=0, cnt=4 * (32 ** 2)):
-
+        #depending on the scale, we sample as many points on the images as possible while staying within resource constraints
         if scl == 1:
             cnt = 5000
         elif scl == 2:
@@ -443,7 +356,6 @@ class objective_class():
         elif scl == 12:
             cnt = 1 * (32 ** 2)
 
-        print("cnt---------->", cnt, scl)
         xx = self.rand_ixx[ri][i][:cnt]
         xy = self.rand_ixy[ri][i][:cnt]
         yx = self.rand_iy[ri][i][:cnt]
@@ -527,7 +439,6 @@ class objective_class():
 
 
         z_s = z_s_all[ri]
-
 
         try:
             temp = self.rand_ixx[ri]
@@ -643,9 +554,6 @@ class objective_class():
         c_st = torch.cat([c_st,xx,yy],1)
 
         return x_st, c_st
-
-
-
 
     def shuffle_feature_inds(self, i=0):
         global use_random
