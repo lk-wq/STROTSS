@@ -31,12 +31,6 @@ from helperbot.metrics import SoftmaxAccuracy
 from apex import amp
 from apex.optimizers import FusedAdam
 
-color_correlation_svd_sqrt = np.asarray([[0.26, 0.09, 0.02],
-                                         [0.27, 0.00, -0.05],
-                                         [0.27, -0.09, 0.03]]).astype("float32")
-
-# color_correlation_svd_sqrt = np.asarray([[0.577350,0.577350,0.577350],[-0.577350,0.788675,-0.211325],[-0.577350,-0.211325,0.788675]]).astype("float32")
-
 max_norm_svd_sqrt = np.max(np.linalg.norm(color_correlation_svd_sqrt, axis=0))
 
 import subprocess
@@ -57,77 +51,20 @@ def get_gpu_memory_map():
         ])
     return int(result)
 
-
-def lin_decor(t):
-    """Multiply input by sqrt of emperical (ImageNet) color correlation matrix.
-
-    If you interpret t's innermost dimension as describing colors in a
-    decorrelated version of the color space (which is a very natural way to
-    describe colors -- see discussion in Feature Visualization article) the way
-    to map back to normal colors is multiply the square root of your color
-    correlations.
-    """
-    # check that inner dimension is 3?
-    t_flat = torch.reshape(t.contiguous(), [-1, 3])
-    ccn = torch.tensor(color_correlation_svd_sqrt / max_norm_svd_sqrt).cuda()
-    #   print("ccn size : ", ccn.size())
-    ccn = torch.transpose(ccn, 0, 1).float().cuda()
-    t_flat = torch.matmul(t_flat, ccn)
-    t = torch.reshape(t_flat, t.shape)
-    return t
-
-
 def style_transfer(counter, stylized_im, content_im, style_path, output_path, scl, long_side, mask,
                    content_weight=0., use_guidance=False, regions=0, coords=0, lr=2e-3):
     start = time.time()
     torch.cuda.empty_cache()
 
+    # Neural style transfer is performed iteratively. We control the number of iterations depending on the scale of the image. You can set higher or lower numbers of iterations
+    # here depending on how much compute you have.
     REPORT_INTERVAL = 100
     RESAMPLE_FREQ = 1
     RESAMPLE_INCREASE_FREQ = 150
-    if scl == 1:
-        MAX_ITER = 17
-    if scl == 2:
-        MAX_ITER = 17
+    
     save_ind = 0
     counter = counter
 
-    if scl == 3:
-        MAX_ITER = 17
-
-    if scl == 4:
-        MAX_ITER = 17
-
-    if counter == 0:
-        MAX_ITER = 50
-
-    if counter > 9:
-        MAX_ITER = 150
-    else:
-        MAX_ITER = 100
-
-    if long_side == 64:
-        inner_iter = 4
-    if 65 < long_side <= 128:
-        inner_iter = 3
-    if 128 < long_side <= 256:
-        inner_iter = 3
-
-    if 256 < long_side <= 384:
-        inner_iter = 2
-    if long_side > 384:
-        inner_iter = 1
-    if inner_iter > 1:
-        RESAMPLE_FREQ = 1
-        MAX_ITER = int(100 * (4 / inner_iter))
-    else:
-        RESAMPLE_FREQ = 1
-        MAX_ITER = 200
-        if long_side == 1280:
-            MAX_ITER = 300
-        if long_side == 1536:
-            MAX_ITER = 600
-    RESAMPLE_FREQ = 1
     if long_side == 64:
         inner_iter = 1
         MAX_ITER = 109
@@ -164,8 +101,6 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
 
     cut = 10000000
 
-    inner_iter = 1
-
     use_pyr = True
     torch.backends.cudnn.enabled = True
     temp_name = './' + output_path.split('/')[-1].split('.')[0] + '_temp.png'
@@ -178,34 +113,23 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
     shutil.move(temp_name, output_path)
 
     #### Define feature extractor ###
-    # if scl == 1:
-    #    cnn = utils.to_device(Vgg16_pt_small())
-    # else:
-    # cnn = utils.to_device(Vgg16_pt())
-
-    cnn1 = (Nas())
-
+    cnn1 = (Nas())    
+    
     #### Optimize over laplaccian pyramid instead of pixels directly ####
-
-    ### Define Optimizer ###
     if use_pyr:
         s_pyr = dec_lap_pyr(stylized_im, 5)
         s_pyr = [Variable(li.data, requires_grad=True) for li in s_pyr]
     else:
         s_pyr = [Variable(stylized_im.data, requires_grad=True)]
-
+        
+    ### Define Optimizer ###
     optimizer = optim.RMSprop(s_pyr, lr=lr)
 
-    if 1:
-        cnn1, optimizer = amp.initialize(
-            cnn1, optimizer, opt_level='O2', keep_batchnorm_fp32=False, loss_scale='dynamic',
-            cast_model_outputs=torch.float16
-        )
-    else:
-        cnn1, optimizer = amp.initialize(
-            cnn1, optimizer, opt_level='O2', keep_batchnorm_fp32=False, loss_scale='dynamic',
-            cast_model_outputs=torch.float16
-        )
+    # You can choose to train in half precision here or not. Half precision doesn't generally produce images that look as good but can scale to larger images.
+    cnn1, optimizer = amp.initialize(
+        cnn1, optimizer, opt_level='O2', keep_batchnorm_fp32=False, loss_scale='dynamic',
+        cast_model_outputs=torch.float16
+    )
 
     phi1 = lambda scl, x, rand, name: cnn1.forward(scl, x, rand, name)
     phi12 = lambda scl, x, name: cnn1.forward_cat(scl, x, name=name)
@@ -221,13 +145,8 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
     if use_guidance:
         gs = load_style_guidance(phi, style_path, coords[:, 2:], scale=long_side)
 
-    ### Randomly choose spatial locations to extract features from ###
-    if use_pyr:
-        stylized_im = syn_lap_pyr(s_pyr)
-    else:
-        stylized_im = s_pyr[0]
 
-    # z_c = phi_content(scl, content_im)
+    ### Randomly choose spatial locations to extract features from ###
     with torch.no_grad():
         z_c = phi1(scl, content_im, [], 'content')
         #   print("content im size : " , content_im.size(), content_im.max(), content_im.min())
@@ -246,13 +165,8 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
             ell = 0.
             optimizer.zero_grad()
             torch.cuda.empty_cache()
-
-            # START INDEX SELECTION 2
-            # channel_list = [96, 168, 336] + [1008] * 6 + [1344] + [2016] * 6 + [2688] + [4032] * 6
-
-            torch.cuda.empty_cache()
-
-            # END INDEX SELECTION 2
+            
+            # Based on the scale of the image we sub-sample points from the content image
             with torch.no_grad():
                 if j == 0 or j % (RESAMPLE_FREQ * 1) == 0:
                     z_s_all = []
@@ -286,7 +200,7 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
                     z_s_all = [z_s_input]
                     torch.cuda.empty_cache()
 
-                    ## Dramatically Resample Large Set of Spatial Locations ##
+                ## Dramatically Resample Large Set of Spatial Locations ##
                 if j == 0 or j % (RESAMPLE_FREQ * 1) == 0:
                     for ri in range(len(regions[0])):
 
@@ -326,7 +240,6 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
 
         ### Periodically Report Loss and Save Current Image ###
         if (j + 1) % REPORT_INTERVAL == 0:
-            print((j + 1), ell)
             save_ind += 1
 
         print("iteration : ", j)
@@ -336,7 +249,7 @@ def style_transfer(counter, stylized_im, content_im, style_path, output_path, sc
     print("scale time is :  ----------------------------------------------> ", end - start)
     return stylized_im, ell
 
-
+# we ha
 def style_transfer_large(counter, stylized_im, content_im, style_path, output_path, scl, long_side, mask,
                          content_weight=0., use_guidance=False, regions=0, coords=0, lr=2e-3):
     start = time.time()
